@@ -39,6 +39,14 @@ html.light .holiday{color:#b73543}
 @keyframes salarySoftRight{from{opacity:.55;transform:translate3d(-13px,0,0)}to{opacity:1;transform:translate3d(0,0,0)}}
 .salaryDot{transition:background-color .2s ease,border-color .2s ease}
 @media(prefers-reduced-motion:reduce){.tab-enter-left,.tab-enter-right,.salary-swap-left,.salary-swap-right{animation:none}.tabs button,.salaryDot{transition:none}}
+
+/* Fingergeführter Seiten-Track: alle vier Ansichten sind bereits im DOM. */
+.pageViewport{overflow:hidden;position:relative;min-width:0;touch-action:pan-y;overscroll-behavior-x:contain}
+.pageTrack{display:flex;align-items:flex-start;gap:0;width:100%;transform:translate3d(0,0,0);will-change:transform;backface-visibility:hidden}
+.pageTrack>section{display:block!important;flex:0 0 100%;width:100%;min-width:0;min-height:1px}
+.pageTrack>section.hide{display:block!important}
+.pageViewport.is-dragging .pageTrack{transition:none!important}
+@media(prefers-reduced-motion:reduce){.pageTrack{transition:none!important}}
 </style></head><body><main class="app"><header><div><div class="eyebrow">WERKSTUDENT · GEHALTSPLANUNG</div><h1>Mein Schichtrechner</h1></div><button id="themeToggle" type="button" class="themeToggle" aria-label="Hellen Modus einschalten" title="Darstellung wechseln">🌙</button></header><div class="tabs"><button data-tab="kalender" class="active">Kalender</button><button data-tab="gehalt">Gehalt</button><button data-tab="statistik">Statistik</button><button data-tab="einstellungen">Optionen</button></div>
 <section id="kalender"><div class="card"><div class="row"><button class="nav" id="prev">‹</button><h2 id="monthTitle" style="margin:0"></h2><button class="nav" id="next">›</button></div><div id="calendar" class="calendar"></div><p class="subtle">Tag antippen → Schicht auswählen. Sonntag wird automatisch als 12-Stunden-Schicht behandelt.</p></div><div class="card" id="editor"><h2 id="selectedTitle">Schicht eintragen</h2><div id="selectedInfo" class="muted"></div><div class="shiftBtns"><button data-shift="frueh">☀️ Früh</button><button data-shift="spaet">🌇 Spät</button><button data-shift="nacht">🌙 Nacht</button></div><div id="holidayOverride" class="holidayOverride hide"><label><input type="checkbox" id="noHolidayBonus"> Für diesen Tag keinen Feiertagszuschlag berechnen</label><p class="subtle">Der Tag bleibt ein gesetzlicher Feiertag. Die App berechnet dann nur die regulären Sonntags-/Schichtzuschläge. Änderung wird sofort gespeichert.</p></div><div id="editDetails"></div><div class="buttonrow"><button id="confirmShift" class="btn">Bestätigen</button><button id="delete" class="btn danger">Schicht löschen</button></div></div><div class="card salarySwipe" id="salarySwipe"><h2>Gehaltsmonat <span id="periodTitle"></span></h2><div class="grid2"><div class="metric"><small id="salaryLabel">Berechnet brutto</small><strong id="periodGross">–</strong></div><div class="metric"><small>Bezahlte Stunden</small><strong id="periodHours">–</strong></div></div><div class="salaryControls"><span id="salaryPage" class="salaryDots" aria-label="Brutto ausgewählt"><span class="salaryDot active"></span><span class="salaryDot"></span></span></div><p class="swipeHint">Nach links wischen: Netto · nach rechts: Brutto</p><p id="salaryNetNote" class="salaryNote"></p><p id="periodRange" class="subtle"></p><div id="periodNote" class="note"></div></div></section>
 <section id="gehalt" class="hide"><div class="card"><div class="row"><h2>Gehaltsübersicht</h2><div class="row"><button class="nav" id="payPrev">‹</button><strong id="payYear"></strong><button class="nav" id="payNext">›</button></div></div><div class="grid2"><div class="metric"><small>Jahresbrutto berechnet</small><strong id="yearGross">–</strong></div><div class="metric"><small>Auszahlungen erfasst</small><strong id="yearPaid">–</strong></div></div><div id="payMonths"></div></div><div class="card"><h2>Abrechnung vergleichen</h2><div class="field"><label for="paySelect">Gehaltsmonat</label><select id="paySelect"></select></div><div id="compareInfo"></div><div class="grid2"><div class="field"><label for="actualGross">Brutto laut Abrechnung (€)</label><input id="actualGross" type="number" min="0" step="0.01" placeholder="Optional"></div><div class="field"><label for="actualNet">Tatsächliche Überweisung (€)</label><input id="actualNet" type="number" min="0" step="0.01" placeholder="Optional"></div></div><button id="saveActual" class="btn">Abrechnungswerte speichern</button><div id="compareResult"></div></div><div class="card"><h2>Monatliches Gehaltsziel</h2><div class="field"><label for="goal">Bruttoziel pro Gehaltsmonat (€)</label><input id="goal" type="number" min="0" step="50"></div><div id="goalInfo"></div></div></section>
@@ -73,37 +81,102 @@ function renderStats(){ $('statYear').textContent=statYear;let vals=Array.from({
 const settingFields=[['rate','Grundstundenlohn (€)'],['nightPct','Nachtzuschlag (%)'],['sunDayPct','Sonntag Früh (%)'],['sunNightPct','Sonntag 18–06 Uhr (%) – vorläufig'],['holidayPct','Feiertagszuschlag (%) – vorläufig'],['hours8','Bezahlte Stunden bei 8 h'],['hours12','Bezahlte Stunden bei 12 h'],['satSunHours','NUR Sa Nacht → So: bezahlte So-Stunden (00–06)'],['satSunPct','NUR Sa Nacht → So: Zuschlag auf So-Stunden (%)']];function renderSettings(){ $('settingsFields').innerHTML=settingFields.map(([k,l])=>`<div class="field"><label for="set_${k}">${esc(l)}</label><input id="set_${k}" type="number" step="0.01" min="0" value="${Number(data.settings[k])}"></div>`).join('');}
 function render(){renderCalendar();renderPay();renderStats();renderSettings();}
 const tabOrder=['kalender','gehalt','statistik','einstellungen'];
-function switchTab(next, direction){
-  if(next===tab||!tabOrder.includes(next))return;
-  const oldIndex=tabOrder.indexOf(tab),newIndex=tabOrder.indexOf(next);
-  const motion=direction||(newIndex>oldIndex?'left':'right');
-  for(const id of tabOrder){const section=$(id);section.classList.add('hide');section.classList.remove('tab-enter-left','tab-enter-right');}
-  tab=next;
-  document.querySelectorAll('[data-tab]').forEach(b=>b.classList.toggle('active',b.dataset.tab===tab));
-  const active=$(tab);active.classList.remove('hide');
-  if(!window.matchMedia('(prefers-reduced-motion: reduce)').matches)active.animate([{opacity:.78,transform:`translate3d(${motion==='left'?9:-9}px,0,0)`},{opacity:1,transform:'translate3d(0,0,0)'}],{duration:220,easing:'cubic-bezier(.22,1,.36,1)'});
+// Alle Ansichten nebeneinander statt beim Wechsel ein-/auszublenden.
+const pageViewport=document.createElement('div');
+pageViewport.className='pageViewport';
+const pageTrack=document.createElement('div');
+pageTrack.className='pageTrack';
+const firstSection=$('kalender');
+firstSection.parentNode.insertBefore(pageViewport,firstSection);
+pageViewport.appendChild(pageTrack);
+for(const id of tabOrder){const section=$(id);section.classList.remove('hide');pageTrack.appendChild(section);}
+let pageGesture=null,pageAnimating=false,pageAnimationId=0;
+const reduceMotion=()=>window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+const pageWidth=()=>pageViewport.getBoundingClientRect().width||1;
+function setPageOffset(px,animated=false,duration=300){
+  pageTrack.style.transition=animated&&!reduceMotion()?`transform ${duration}ms cubic-bezier(.22,1,.36,1)`:'none';
+  pageTrack.style.transform=`translate3d(${px}px,0,0)`;
+}
+function setPageHeight(){
+  const active=$(tab);
+  pageViewport.style.height=Math.ceil(active.getBoundingClientRect().height)+'px';
+}
+function setTabUI(){document.querySelectorAll('[data-tab]').forEach(b=>b.classList.toggle('active',b.dataset.tab===tab));}
+function completeTab(index){
+  tab=tabOrder[index];setTabUI();
   if(tab==='gehalt')renderPay();
-  
+  requestAnimationFrame(setPageHeight);
+}
+function settlePage(index,animate=true,velocity=0){
+  pageAnimating=true;
+  const from=tabOrder.indexOf(tab),distance=Math.abs(index-from);
+  const duration=Math.max(180,Math.min(350,290-Math.abs(velocity)*65));
+  setPageOffset(-index*pageWidth(),animate,duration);
+  const token=++pageAnimationId;
+  window.setTimeout(()=>{
+    if(token!==pageAnimationId)return;
+    completeTab(index);pageAnimating=false;
+    pageTrack.style.transition='none';
+  },animate&&!reduceMotion()?duration+30:0);
+}
+function switchTab(next){
+  const index=tabOrder.indexOf(next);
+  if(index<0)return;
+  pageGesture=null;pageViewport.classList.remove('is-dragging');
+  ++pageAnimationId;pageAnimating=false;
+  settlePage(index,true);
 }
 document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>switchTab(b.dataset.tab));
-// Wischen über den Inhalt wechselt die Hauptbereiche; die Brutto/Netto-Karte
-// behält ihre eigene Wischfunktion. Vertikales Scrollen bleibt unverändert.
-let mainSwipeStart=null;
+// Horizontal ziehen zeigt die Nachbarseite schon unter dem Finger.
+// Der Brutto-/Netto-Bereich behält seine eigene Wischsteuerung.
 const mainArea=document.querySelector('main.app');
 mainArea.addEventListener('touchstart',e=>{
-  if(e.touches.length!==1||e.target.closest('#salarySwipe, input, select, textarea, [contenteditable="true"]')){mainSwipeStart=null;return;}
-  mainSwipeStart={x:e.touches[0].clientX,y:e.touches[0].clientY,time:Date.now()};
+  if(pageAnimating||e.touches.length!==1||e.target.closest('#salarySwipe, input, select, textarea, [contenteditable="true"]'))return;
+  const t=e.touches[0];
+  pageGesture={x:t.clientX,y:t.clientY,lastX:t.clientX,lastTime:performance.now(),dx:0,v:0,mode:'pending',index:tabOrder.indexOf(tab)};
 },{passive:true});
-mainArea.addEventListener('touchend',e=>{
-  if(!mainSwipeStart||!e.changedTouches.length)return;
-  const dx=e.changedTouches[0].clientX-mainSwipeStart.x;
-  const dy=e.changedTouches[0].clientY-mainSwipeStart.y;
-  mainSwipeStart=null;
-  if(Math.abs(dx)<55||Math.abs(dx)<Math.abs(dy)*1.35)return;
-  const index=tabOrder.indexOf(tab),next=index+(dx<0?1:-1);
-  if(next>=0&&next<tabOrder.length)switchTab(tabOrder[next],dx<0?'left':'right');
-},{passive:true});
-mainArea.addEventListener('touchcancel',()=>{mainSwipeStart=null;},{passive:true});
+mainArea.addEventListener('touchmove',e=>{
+  const g=pageGesture;
+  if(!g||e.touches.length!==1||pageAnimating)return;
+  const t=e.touches[0],dx=t.clientX-g.x,dy=t.clientY-g.y;
+  if(g.mode==='pending'){
+    if(Math.abs(dx)<8&&Math.abs(dy)<8)return;
+    if(Math.abs(dy)>Math.abs(dx)*1.1){pageGesture=null;return;}
+    if(Math.abs(dx)<Math.abs(dy)*1.2)return;
+    g.mode='horizontal';pageViewport.classList.add('is-dragging');
+  }
+  if(g.mode!=='horizontal')return;
+  e.preventDefault();
+  const now=performance.now(),elapsed=now-g.lastTime;
+  if(elapsed>0)g.v=(t.clientX-g.lastX)/elapsed;
+  g.lastX=t.clientX;g.lastTime=now;
+  const width=pageWidth();
+  const minDx=-(tabOrder.length-1-g.index)*width,maxDx=g.index*width;
+  // Widerstand an den Enden statt eines harten Sprungs.
+  let movement=dx;
+  if(dx<minDx)movement=minDx+(dx-minDx)*.18;
+  if(dx>maxDx)movement=maxDx+(dx-maxDx)*.18;
+  g.dx=movement;
+  setPageOffset(-g.index*width+movement);
+},{passive:false});
+function finishPageGesture(cancel=false){
+  const g=pageGesture;if(!g)return;
+  pageGesture=null;pageViewport.classList.remove('is-dragging');
+  if(g.mode!=='horizontal')return;
+  const width=pageWidth();
+  const change=!cancel&&(Math.abs(g.dx)>width*.22||(Math.abs(g.dx)>18&&Math.abs(g.v)>.55));
+  const target=Math.max(0,Math.min(tabOrder.length-1,g.index+(change?(g.dx<0?1:-1):0)));
+  settlePage(target,true,g.v);
+}
+mainArea.addEventListener('touchend',()=>finishPageGesture(),{passive:true});
+mainArea.addEventListener('touchcancel',()=>finishPageGesture(true),{passive:true});
+window.addEventListener('resize',()=>{if(!pageGesture){++pageAnimationId;pageAnimating=false;setPageOffset(-tabOrder.indexOf(tab)*pageWidth());setPageHeight();}},{passive:true});
+// Änderungen im Kalender können die Seitenhöhe verändern.
+if(typeof ResizeObserver!=='undefined'){
+  const observer=new ResizeObserver(()=>{if(!pageGesture&&!pageAnimating)setPageHeight();});
+  for(const id of tabOrder)observer.observe($(id));
+}
+setPageOffset(0);requestAnimationFrame(setPageHeight);
 function moveMonth(delta){viewMonth+=delta;if(viewMonth<0){viewMonth=11;viewYear--}if(viewMonth>11){viewMonth=0;viewYear++}selected=dateKey(new Date(viewYear,viewMonth,1));renderCalendar();}let swipeStart=null;const swipeCard=$('salarySwipe');swipeCard.addEventListener('touchstart',e=>{swipeStart={x:e.changedTouches[0].clientX,y:e.changedTouches[0].clientY};},{passive:true});swipeCard.addEventListener('touchend',e=>{if(!swipeStart)return;let dx=e.changedTouches[0].clientX-swipeStart.x,dy=e.changedTouches[0].clientY-swipeStart.y;swipeStart=null;if(Math.abs(dx)>45&&Math.abs(dx)>Math.abs(dy)*1.4){const nextPage=dx<0?1:0;if(nextPage===salaryPage)return;salaryPage=nextPage;const salaryMetric=swipeCard.querySelector('.metric:first-child');salaryMetric.classList.remove('salary-swap-left','salary-swap-right');renderSalaryCard(periodFor(selected),periodTotal(periodFor(selected)));salaryMetric.animate([{opacity:.55,transform:`translate3d(${dx<0?13:-13}px,0,0)`},{opacity:1,transform:'translate3d(0,0,0)'}],{duration:240,easing:'cubic-bezier(.22,1,.36,1)'});}},{passive:true});$('prev').onclick=()=>moveMonth(-1);$('next').onclick=()=>moveMonth(1);document.querySelectorAll('[data-shift]').forEach(b=>b.onclick=()=>{let d=parse(selected);if(d.getDay()===0&&b.dataset.shift==='nacht')return;pendingShift=b.dataset.shift;renderCalendar();});$('noHolidayBonus').onchange=()=>{if($('noHolidayBonus').checked)data.noHolidayBonus[selected]=true;else delete data.noHolidayBonus[selected];persist();render();};$('confirmShift').onclick=()=>{if(!pendingShift)return;data.shifts[selected]=pendingShift;pendingShift=null;persist();render();};$('delete').onclick=()=>{delete data.shifts[selected];pendingShift=null;persist();render();};$('payPrev').onclick=()=>{payYear--;renderPay()};$('payNext').onclick=()=>{payYear++;renderPay()};$('statPrev').onclick=()=>{statYear--;renderStats()};$('statNext').onclick=()=>{statYear++;renderStats()};$('paySelect').onchange=renderCompare;$('saveActual').onclick=()=>{let key=$('paySelect').value;let gross=$('actualGross').value,net=$('actualNet').value;data.payouts[key]={};if(gross!=='')data.payouts[key].gross=Number(gross);if(net!=='')data.payouts[key].net=Number(net);persist();renderPay();alert('Abrechnungswerte gespeichert.');};$('goal').onchange=()=>{data.settings.goal=Math.max(0,Number($('goal').value)||0);persist();renderCompare();};$('saveSettings').onclick=()=>{for(const [k] of settingFields){let n=Number($('set_'+k).value);if(!Number.isFinite(n)||n<0||((k==='hours8'||k==='hours12'||k==='satSunHours')&&n>24)){alert('Bitte gültige Zahlen eingeben.');return;}data.settings[k]=n;}persist();render();alert('Einstellungen gespeichert.');};$('export').onclick=()=>{let blob=new Blob([JSON.stringify({version:4,exportedAt:new Date().toISOString(),...data},null,2)],{type:'application/json'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='schichtrechner-sicherung-'+dateKey(new Date())+'.json';document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);};$('importBtn').onclick=()=>$('importFile').click();$('importFile').onchange=async e=>{let file=e.target.files[0];if(!file)return;try{let obj=JSON.parse(await file.text());if(!obj||typeof obj.shifts!=='object'||!obj.shifts||typeof obj.settings!=='object'||!obj.settings||Array.isArray(obj.shifts))throw Error('Ungültige Sicherungsdatei');if(!confirm('Aktuelle Daten durch diese Sicherung ersetzen?'))return;data={settings:{...base,...obj.settings},shifts:obj.shifts,payouts:obj.payouts||{},noHolidayBonus:obj.noHolidayBonus&&typeof obj.noHolidayBonus==='object'&&!Array.isArray(obj.noHolidayBonus)?obj.noHolidayBonus:{}};persist();render();alert('Sicherung importiert.');}catch(err){alert('Import fehlgeschlagen: '+err.message)}e.target.value='';};render();if('serviceWorker' in navigator)navigator.serviceWorker.register('./sw.js').catch(()=>{});
 })();
 </script></body></html>
