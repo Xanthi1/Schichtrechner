@@ -101,7 +101,7 @@ function setPageHeight(){
   const active=$(tab);
   pageViewport.style.height=Math.ceil(active.getBoundingClientRect().height)+'px';
 }
-function setTabUI(){document.querySelectorAll('[data-tab]').forEach(b=>b.classList.toggle('active',b.dataset.tab===tab));}
+function setTabUI(active=tab){document.querySelectorAll('[data-tab]').forEach(b=>b.classList.toggle('active',b.dataset.tab===active));}
 function completeTab(index){
   tab=tabOrder[index];setTabUI();
   if(tab==='gehalt')renderPay();
@@ -110,7 +110,8 @@ function completeTab(index){
 function settlePage(index,animate=true,velocity=0){
   pageAnimating=true;
   const from=tabOrder.indexOf(tab),distance=Math.abs(index-from);
-  const duration=Math.max(180,Math.min(350,290-Math.abs(velocity)*65));
+  const duration=Math.max(140,Math.min(240,205-Math.abs(velocity)*35));
+  setTabUI(tabOrder[index]); // Tab-Markierung sofort beim Loslassen aktualisieren
   setPageOffset(-index*pageWidth(),animate,duration);
   const token=++pageAnimationId;
   window.setTimeout(()=>{
@@ -157,12 +158,16 @@ mainArea.addEventListener('touchmove',e=>{
   if(dx<minDx)movement=minDx+(dx-minDx)*.18;
   if(dx>maxDx)movement=maxDx+(dx-maxDx)*.18;
   g.dx=movement;
+  // Die obere Navigation reagiert schon während des Ziehens.
+  const previewStep=Math.abs(movement)>width*.12?(movement<0?1:-1):0;
+  const previewIndex=Math.max(0,Math.min(tabOrder.length-1,g.index+previewStep));
+  setTabUI(tabOrder[previewIndex]);
   setPageOffset(-g.index*width+movement);
 },{passive:false});
 function finishPageGesture(cancel=false){
   const g=pageGesture;if(!g)return;
   pageGesture=null;pageViewport.classList.remove('is-dragging');
-  if(g.mode!=='horizontal')return;
+  if(g.mode!=='horizontal'){setTabUI();return;}
   const width=pageWidth();
   const change=!cancel&&(Math.abs(g.dx)>width*.22||(Math.abs(g.dx)>18&&Math.abs(g.v)>.55));
   const target=Math.max(0,Math.min(tabOrder.length-1,g.index+(change?(g.dx<0?1:-1):0)));
